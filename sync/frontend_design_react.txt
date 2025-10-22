@@ -1,0 +1,357 @@
+Cél: 
+Generálj egy Vite + React + TypeScript (SWC) frontend csomagot egy Social Media Scheduler apphoz.
+Ne adj hozzá felesleges csomagokat (nincs Redux, nincs UI-keretrendszer). Csak:
+-React, React Router,
+-Axios,
+-TailwindCSS.
+
+Alapok:
+Build: Vite (React + TS + SWC).
+Nyelv: TypeScript, strict.
+Stílus: TailwindCSS.
+Router: react-router-dom.
+HTTP kliens: axios.
+Auth: Laravel Sanctum Bearer token (localStorage-ben tárolt token → Authorization: Bearer <token> header).
+API base URL: import.meta.env.VITE_API_URL.
+
+Projekt fa 
+
+```
+.
+├── .env.example # Minta környezeti változók (VITE_API_URL)
+├── index.html # Vite belépő HTML
+├── package.json # Projekt meta + script-ek + függőségek
+├── postcss.config.js # PostCSS (Tailwind) konfiguráció
+├── tailwind.config.js # Tailwind konfiguráció
+├── tsconfig.json # TypeScript szigorú beállítások + alias @/*
+├── vite.config.ts # Vite konfiguráció (React + SWC)
+└── src
+├── App.tsx # Alap alkalmazás shell (Navbar + Sidebar + Router outlet)
+├── main.tsx # React belépési pont + token visszatöltés + Tailwind CSS
+├── router
+│ └── index.tsx # Route-ok + RequireAuth guard + NotFound
+├── lib
+│ ├── api.ts # Axios kliens + setAuthToken
+│ └── auth.ts # Auth helper: login/register/logout + token tárolás
+├── types.ts # Típusok (ID, Workspace, stb.)
+├── styles
+│ └── index.css # Tailwind base/components/utilities
+├── components
+│ ├── RequireAuth.tsx # Védett útvonal guard
+│ ├── layout
+│ │ ├── Navbar.tsx # Felső navigációs sáv (hamburger mobilon)
+│ │ ├── PageShell.tsx # Oldal keret: cím + actions + tartalom
+│ │ └── Sidebar.tsx # Oldalsáv navigáció (mobilon rejtett)
+│ └── ui
+│ ├── Banner.tsx # Hiba/siker infó banner
+│ ├── Button.tsx # Gomb variánsok: primary/secondary/ghost
+│ ├── Card.tsx # Kártya komponensek
+│ ├── Input.tsx # Input mező
+│ ├── Label.tsx # Címke
+│ ├── Spinner.tsx # Egyszerű spinner
+│ └── Table.tsx # Minimal táblázat zebra sorokkal
+└── pages
+├── Login.tsx # Bejelentkezés
+├── NotFound.tsx # 404 oldal
+├── Overview.tsx # Áttekintés/gyors linkek
+├── Posts.tsx # Posts CRUD (lista + létrehozás + szerkesztés/törlés)
+├── Register.tsx # Regisztráció
+├── Schedules.tsx # Schedules CRUD + datetime-local → ISO UTC
+└── Workspaces.tsx # Workspaces CRUD
+└── SocialAccounts.tsx # Social Accounts CRUD
+
+
+Típusok (TS):
+export type ID = string; // UUID
+export type Workspace = { id: ID; name: string; created_at?: string; updated_at?: string };
+export type SocialPlatform = 'facebook' | 'instagram' | 'linkedin' | 'x';
+export type SocialAccount = {
+  id: ID;
+  workspace_id: ID;
+  platform: SocialPlatform;
+  provider_user_id?: string | null;
+  handle?: string | null;
+  created_at?: string;
+  updated_at?: string;
+};
+export type Post = {
+  id: ID;
+  workspace_id: ID;
+  content: string;
+  media_urls: string[];
+  created_at?: string;
+  updated_at?: string;
+};
+export type ScheduledPost = {
+  id: ID;
+  post_id: ID;
+  social_account_id: ID;
+  scheduled_for: string; // ISO UTC
+  status: 'pending' | 'sent' | 'cancelled';
+  sent_at?: string | null;
+  last_error?: string | null;
+  created_at?: string;
+  updated_at?: string;
+};
+export type User = { id: number; name: string; email: string };
+
+
+API feltételezések:
+Base: ${VITE_API_URL}
+
+
+Auth (publikus):
+POST /auth/register → { token, user }
+POST /auth/login → { token, user }
+
+
+Védett (Bearer szükséges):
+GET /auth/me → user
+POST /auth/logout → 204
+
+CRUD:
+GET /workspaces
+POST /workspaces { name }
+PATCH /workspaces/:id
+DELETE /workspaces/:id
+GET /social-accounts?workspace_id=:id
+POST /social-accounts { workspace_id, platform, provider_user_id?, handle? }
+PATCH /social-accounts/:id
+DELETE /social-accounts/:id
+GET /posts?workspace_id=:id
+POST /posts { workspace_id, content, media_urls: string[] }
+PATCH /posts/:id
+DELETE /posts/:id
+GET /schedules?workspace_id=:id
+POST /schedules { post_id, social_account_id, scheduled_for }
+PATCH /schedules/:id
+DELETE /schedules/:id
+
+
+Követelmények
+1) Axios kliens
+
+src/lib/api.ts:
+axios.create({ baseURL: import.meta.env.VITE_API_URL })
+export function setAuthToken(token?: string) → állítsa/vegye le az Authorization headert.
+
+
+2) Auth helper
+
+src/lib/auth.ts:
+login(email, password): POST /auth/login, token mentése localStorage-ba, setAuthToken(token).
+register(name, email, password): mint fent.
+logout(): törölje a tokent és az auth headert.
+App induláskor töltse vissza a tokent (main.tsx).
+
+
+3) Oldalak (CRUD)
+
+Login / Register: 2 mező/3 mező, siker esetén redirect Overview-ra.
+Overview: egyszerű „hello + gyors linkek”.
+
+
+Workspaces:
+Lista: név, létrehozás gomb (inline form).
+Törlés, átnevezés (inline).
+
+Posts:
+Workspace ID megadására input (vagy select).
+Lista (content első 120 karakter), Create form (content textarea, media_urls textarea [JSON soronként]).
+
+SocialAccounts:
+Workspace ID filter.
+Lista: platform, handle.
+Create: workspace_id, platform (select), handle.
+
+Schedules:
+Workspace ID filter.
+Create: post_id, social_account_id, datetime-local → ISO UTC konverzió a beküldés előtt.
+Lista: post_id → social_account_id @ scheduled_for [status].
+
+
+Mindegyik oldal használja az azonos mintát:
+
+egyszerű állapot: useState
+useEffect betöltés
+hiba/siker üzenetek egyszerű <p>-vel (nincs 3rd-party toast)
+
+
+4) Routing
+
+src/router/index.tsx:
+/login, /register
+/ → Overview
+/workspaces, /posts, /accounts, /schedules
+* → NotFound
+Auth guard (egyszerű):
+Ha nincs token a localStorage-ban → redirect /login-ra (egy RequireAuth komponenssel).
+
+
+5) Reszponzivitás + hozzáférhetőség
+
+Mobil-first, max-width konténerek.
+Minden inputhoz <label htmlFor> párok.
+Gomboknál aria-busy ha loading.
+
+6) Környezet
+
+.env minta:
+VITE_API_URL=http://127.0.0.1:8000/api
+package.json script: dev, build, preview.
+
+
+7) Kódminőség
+
+Tiszta funkcionális komponensek.
+Nincsenek felesleges hook-ok, nincs globális state-könyvtár.
+Egységes imports (alias: @/* → tsconfig.json paths).
+Acceptance criteria
+A projekt buildel és fut npm run dev-vel.
+Minden CRUD oldal működik a megadott API végpontokkal.
+Login/Logout működik; token beáll a headerbe; védett oldalak guard alatt.
+Nincs extra dependency a felsoroltakon túl.
+Reusable UI elemek ténylegesen több oldalon újrahasznosulnak.
+Kód TS-szigorú, típusok a types.ts-ben meghatározva.
+A TD komponens nem fogad el colSpan prop-ot szóval native td elemet használj.
+
+8) Frontend Design irányelvek (MVP, modern, tiszta)
+
+Általános stílus
+Design filozófia: minimalista, funkcionális, könnyen olvasható.
+Layout: mobil-first grid, max-width konténer, levegős elrendezés (padding-margin: 1–2 rem).
+
+Színpaletta:
+Alap: fehér háttér (#fff), szürke árnyalatok (#f9fafb, #e5e7eb, #6b7280)
+Akcentus: kék (#2563eb) a fő CTA-khoz
+Hiba: piros (#dc2626), siker: zöld (#16a34a), semleges: sárga (#facc15)
+Betűtípus: Inter, Roboto, vagy system-ui.
+
+Tipográfia:
+H1: text-2xl font-semibold mb-4
+H2: text-xl font-medium mb-2
+P: text-gray-700 leading-relaxed
+Kis szövegek: text-sm text-gray-500
+
+
+Layout komponensek
+
+Navbar
+Fix magasság (64 px), világos háttér, vékony alsó szegély.
+Bal oldalt logó/appnév, jobb oldalt Login/Logout linkek.
+Mobilon collapsible hamburger menü.
+
+Sidebar
+250 px széles, fix bal oldalon, világos háttér, linkek ikon + szöveg kombinációban.
+Aktív link kiemelve (bg-gray-100 border-l-4 border-blue-500).
+Mobilon rejtett, hamburgerrel nyílik.
+
+PageShell
+Tartalomrész flex-1, padding 4, max-width 5xl.
+Használj konzisztens “page title + actions bar” elrendezést (flex justify-between items-center mb-4).
+
+
+Kártyák és listák
+
+Card
+Fehér háttér, rounded-xl, shadow-sm, belül p-4 md:p-6.
+Fejléc (CardHeader): cím (text-lg font-semibold), jobb oldalt action gomb(ok).
+Egységes spacing: komponensek között space-y-4.
+
+Table
+Minimal táblázat, sortördelés nélküli cellák, zebra háttér (minden második sor világosszürke).
+Hover-állapot (hover:bg-gray-50).
+Szűrő- és keresőmezők a táblázat felett (flex items-center gap-2 mb-2).
+
+EmptyState
+Középre igazított illusztráció (ikon/emotikon) + title + CTA gomb.
+Tipikus színek: halványkék ikon + szürke szöveg.
+
+Űrlapok
+Egységes FormRow elrendezés: label fent, input alatt, kis text-sm text-gray-500 helptext.
+
+Input mezők:
+border border-gray-300 rounded-md px-3 py-2
+focus: ring-2 ring-blue-500 outline-none
+
+Hibák: piros keret + piros kis szöveg alul.
+Submit gomb mindig Button variant="primary" jobb alul igazítva.
+
+Button
+Variánsok:
+primary: bg-blue-600 text-white hover:bg-blue-700
+secondary: border border-gray-300 text-gray-700 hover:bg-gray-50
+ghost: text-gray-600 hover:bg-gray-100
+Állapotok:
+disabled:opacity-50 cursor-not-allowed
+aria-busy="true" esetén kis spinner (jobb oldalán).
+
+
+Reszponzivitás
+
+Breakpoints:
+sm: 640 px → 1 oszlop
+md: 768 px → 2 oszlop
+lg: 1024 px → 3 oszlop
+
+Mobile view: Sidebar rejtett, Navbar fix, Card-stackes elrendezés.
+Desktop view: Sidebar látható, Card-ok gridben (pl. Overview-ban).
+
+
+Feedback / státuszjelzés
+
+Loader: spinner (animate-spin border-2 border-blue-500 border-t-transparent rounded-full w-5 h-5).
+ErrorBanner / SuccessBanner:
+piros/zöld háttér (bg-red-50 text-red-700 border border-red-200 p-2 rounded-md)
+ikon bal oldalt, X gomb jobb oldalt.
+
+
+UX / navigáció
+
+Minden CRUD oldal tetején mindig:
+Title + Új elem gomb (flex justify-between items-center mb-4)
+Ez alatt: lista vagy form
+Minden listában szerkesztés és törlés ikon (🖊️ ✖️) jobb szélén.
+Törlés előtt window.confirm() – semmi fancy modal (MVP).
+
+
+Ikonhasználat 
+
+Egyszerű lucide-react vagy hasonló ikoncsalád javasolt.
+Navbar: Home, Folder, FileText, Calendar, User.
+Gombok: Plus, Trash, Edit, Save, LogOut.
+Ikonméret: 18 px, szín: text-gray-500 hover:text-gray-700.
+
+
+Komponensek közötti vizuális konzisztencia
+
+Minden oldal PageShell-be ágyazva, egységes háttér, padding.
+Formok, táblák, kártyák között azonos spacing.
+Színek, árnyékok, border-radius minden komponensben megegyeznek (rounded-md vagy rounded-lg).
+Interaktív elemeknél mindig hover-állapot.
+
+
+MVP vizuális prioritás
+
+Tisztán olvasható, átlátható felület (semmi díszítés).
+Reszponzív működés minden oldalon.
+Azonos tipográfiai hierarchia (címek, alcímek, szöveg).
+Egyértelmű CTA-k (egy oldalon max 1 fő gomb).
+Reusable UI-elemek (ugyanaz a Button, Input, Card mindenhol).
+
+9) Ne tedd bele tiltólista
+
+Ne generálj backend kódot, adatbázist, Docker/SST/Vercel fájlokat, mock szervert, Storybookot, teszteket (Jest/Vitest), 
+ikon- vagy UI-könyvtárat, form könyvtárat (Formik/React Hook Form), állapotkezelőt (Redux, Zustand), query klienst (React Query), 
+dátum libet (dayjs, date-fns).
+Ikonokhoz csak inline SVG-t használj (ne telepíts ikoncsomagot).
+Tailwind: csak a szükséges config és utility osztályok, nincs 3rd-party Tailwind plugin.
+Ne használjon i18n libet; stringek angolul, de ne adj hozzá i18n csomagot.
+Ne használj @ import aliast, mindig relatív útvonalas importot használj.
+
+
+
+Generáld le a fenti specifikáció alapján a teljes frontend csomagot. Sorold fel a teljes mappa/fájl fát (útvonal + 1 mondatos leírás).
+Kulcsfájlok teljes kódját. Tailwind bekötést tailwind.config.js, postcss.config.js, src/styles/index.css. Generálj .env.example-t
+VITE_API_URL sorral, tsconfig.json paths alias @/* beállítással (de ne telepíts plusz csomagot).
+Csak a felsorolt fákat generáld, ne adj hozzá plusz mappát. 
